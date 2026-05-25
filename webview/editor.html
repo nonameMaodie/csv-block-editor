@@ -153,6 +153,21 @@
             background-color: #f44336;
             color: white;
         }
+
+        .col-resize-handle {
+            position: absolute;
+            right: -3px;
+            top: 0;
+            bottom: 0;
+            width: 6px;
+            cursor: col-resize;
+            z-index: 30;
+        }
+
+        .col-resize-handle:hover,
+        .col-resize-handle.active {
+            background-color: var(--vscode-focusBorder, #007fd4);
+        }
     </style>
 </head>
 
@@ -421,7 +436,7 @@
             for (let j = 0; j < csvData[0].length; j++) {
                 const header = csvData[0][j];
                 const chineseHeader = fieldMapping[header] || header;
-                headerHtml += `<th title="${header}">${chineseHeader}</th>`;
+                headerHtml += `<th title="${header}"><span>${chineseHeader}</span><div class="col-resize-handle" data-col="${j}"></div></th>`;
 
                 const dataType = typeMapping[header] || '';
                 typeHtml += `<th class="type-header" title="${typeDescriptions[dataType] ?? ''}">${dataType}</th>`;
@@ -471,6 +486,70 @@
                 if (cell.classList && cell.classList.contains('edit-cell')) {
                     onCellBlur(cell);
                 }
+            });
+        }
+
+        function setupColumnResize() {
+            const headerRow = document.getElementById('headerRow');
+            let resizing = false;
+            let startX = 0;
+            let startWidth = 0;
+            let resizeHandle = null;
+            let resizeTh = null;
+
+            headerRow.addEventListener('mousedown', function (e) {
+                const handle = e.target.closest('.col-resize-handle');
+                if (!handle) { return; }
+
+                e.preventDefault();
+                resizing = true;
+                resizeHandle = handle;
+                resizeTh = handle.parentElement;
+                startX = e.clientX;
+                startWidth = resizeTh.offsetWidth;
+                handle.classList.add('active');
+
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+            });
+
+            document.addEventListener('mousemove', function (e) {
+                if (!resizing) { return; }
+
+                const diff = e.clientX - startX;
+                const newWidth = Math.max(60, startWidth + diff);
+                const colIdx = parseInt(resizeHandle.dataset.col);
+
+                resizeTh.style.width = newWidth + 'px';
+                resizeTh.style.minWidth = newWidth + 'px';
+                resizeTh.style.maxWidth = newWidth + 'px';
+
+                const allCells = document.querySelectorAll(`td[data-col="${colIdx}"]`);
+                allCells.forEach(cell => {
+                    cell.style.width = newWidth + 'px';
+                    cell.style.minWidth = newWidth + 'px';
+                    cell.style.maxWidth = newWidth + 'px';
+                });
+
+                const typeTh = document.querySelectorAll('.type-row th')[colIdx];
+                if (typeTh) {
+                    typeTh.style.width = newWidth + 'px';
+                    typeTh.style.minWidth = newWidth + 'px';
+                    typeTh.style.maxWidth = newWidth + 'px';
+                }
+            });
+
+            document.addEventListener('mouseup', function () {
+                if (!resizing) { return; }
+
+                resizing = false;
+                if (resizeHandle) {
+                    resizeHandle.classList.remove('active');
+                }
+                resizeHandle = null;
+                resizeTh = null;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
             });
         }
 
@@ -561,6 +640,7 @@
                     headers = [...csvData[0]];
                     renderTable();
                     setupEventDelegation();
+                    setupColumnResize();
                 } catch (error) {
                     showToast('解析文件时出错: ' + error.message, false);
                 }
