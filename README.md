@@ -13,6 +13,10 @@ A VS Code extension for editing Survivalcraft mod block data files in a spreadsh
 - **Seamless Save**: Press `Ctrl+S` to save — the original `.csv` or `.txt` file is overwritten directly
 - **Dark Theme Optimized**: All colors use opaque values for consistent appearance in VS Code dark themes
 
+## Screenshots
+
+![Table View](screenshots/table-view.png)
+
 ## Usage
 
 1. Open a `.csv` or `.txt` block data file in VS Code
@@ -44,6 +48,10 @@ None.
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
+
+## Support & Feedback
+
+If you encounter any issues or have suggestions, please feel free to [open an issue](https://github.com/nonameMaodie/csv-block-editor/issues).
 
 ## License
 
