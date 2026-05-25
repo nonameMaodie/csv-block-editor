@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV编辑器 - 方块数据编辑</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', sans-serif;
+            margin: 10px;
+            background-color: var(--vscode-editor-background, #f5f5f5);
+            color: var(--vscode-editor-foreground, #333);
+        }
+
+        .container {
+            margin: 0 auto;
+            background-color: var(--vscode-editor-background, white);
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        h1 {
+            text-align: center;
+            color: var(--vscode-editor-foreground, #333);
+            margin-bottom: 15px;
+            font-size: 1.4em;
+        }
+
+        .controls {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        button {
+            background-color: #2196F3;
+            color: white;
+            padding: 8px 14px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        button:hover {
+            background-color: #1976D2;
+        }
+
+        .table-wrapper {
+            overflow: auto;
+            max-height: 75vh;
+            margin-top: 15px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        th,
+        td {
+            padding: 6px 8px;
+            text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 120px;
+            max-width: 300px;
+            border-bottom: 1px solid var(--vscode-panel-border, #ddd);
+            border-right: 1px solid var(--vscode-panel-border, #ddd);
+        }
+
+        th {
+            background-color: var(--vscode-editor-lineHighlightBackground, #f2f2f2);
+        }
+
+        thead tr:first-child th {
+            border-top: 1px solid var(--vscode-panel-border, #ddd);
+        }
+
+        th:first-child,
+        td:first-child {
+            border-left: 1px solid var(--vscode-panel-border, #ddd);
+        }
+
+        thead tr:first-child th {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        thead tr.type-row th {
+            position: sticky;
+            z-index: 10;
+        }
+
+        tbody td:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 5;
+            background-color: var(--vscode-editor-background, white);
+        }
+
+        thead th:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 20;
+        }
+
+        thead tr:first-child th:first-child {
+            z-index: 20;
+        }
+
+        .type-row th {
+            background-color: var(--vscode-editor-inactiveSelectionBackground, #e6e6e6);
+            font-weight: normal;
+            font-size: 0.85em;
+            color: var(--vscode-descriptionForeground, #666);
+        }
+
+        .type-header {
+            cursor: help;
+        }
+
+        tbody tr:nth-child(even) {
+            background-color: var(--vscode-editor-inactiveSelectionBackground, #f9f9f9);
+        }
+
+        tbody tr:nth-child(even) td:first-child {
+            background-color: var(--vscode-editor-inactiveSelectionBackground, #f9f9f9);
+        }
+
+        tr.highlighted {
+            background-color: #ffff99 !important;
+        }
+
+        tr.highlighted td:first-child {
+            background-color: #ffff99 !important;
+        }
+
+        .edit-cell {
+            width: 120px;
+            outline: none;
+        }
+
+        .edit-cell:focus {
+            outline: 2px solid var(--vscode-focusBorder, #007fd4);
+            outline-offset: -2px;
+            background-color: var(--vscode-editor-selectionBackground, #add6ff) !important;
+        }
+
+        .instructions {
+            background-color: var(--vscode-textBlockQuote-background, #e7f3ff);
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            border-left: 4px solid var(--vscode-textLink-foreground, #2196F3);
+        }
+
+        .instructions h3 {
+            margin-top: 0;
+            color: var(--vscode-textLink-foreground, #1976D2);
+            font-size: 1em;
+        }
+
+        .instructions ul {
+            margin-bottom: 0;
+            padding-left: 20px;
+            font-size: 0.9em;
+        }
+
+        .instructions li {
+            margin-bottom: 3px;
+        }
+
+        .status {
+            margin-top: 10px;
+            padding: 8px;
+            border-radius: 4px;
+            display: none;
+            font-size: 0.9em;
+        }
+
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            display: block;
+        }
+
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            display: block;
+        }
+
+        .file-name {
+            font-size: 0.9em;
+            color: var(--vscode-descriptionForeground, #666);
+            margin-bottom: 10px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--vscode-descriptionForeground, #666);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>方块数据CSV编辑器</h1>
+
+        <div class="instructions">
+            <h3>使用说明</h3>
+            <ul>
+                <li>在 VS Code 中打开 CSV 或 TXT 文件，自动以表格形式加载（支持以分号";"分隔的文件）</li>
+                <li>点击单元格即可编辑内容，按 Tab 键切换到下一个单元格</li>
+                <li>编辑完成后，按 Ctrl+S 保存，内容将直接写回原文件</li>
+                <li>表头字段已自动转换为中文显示，鼠标悬停可查看英文字段名</li>
+                <li>类型行显示各字段的数据类型，鼠标悬停可查看类型说明</li>
+            </ul>
+        </div>
+
+        <div class="controls">
+            <button id="saveBtn" onclick="saveCSV()">保存 (Ctrl+S)</button>
+            <span id="fileName" class="file-name"></span>
+        </div>
+
+        <div id="status" class="status"></div>
+
+        <div id="tableContainer">
+            <p class="loading">正在加载文件内容...</p>
+        </div>
+    </div>
+
+    <script>
+        const vscode = acquireVsCodeApi();
+
+        const fieldMapping = {
+            'Class Name': '类名',
+            'DefaultDisplayName': '默认显示名称',
+            'DefaultCategory': '默认类别',
+            'Behaviors': '行为',
+            'DisplayOrder': '显示顺序',
+            'DefaultIconBlockOffset': '默认图标方块偏移',
+            'DefaultIconViewOffset': '默认图标视角偏移',
+            'DefaultIconViewScale': '默认图标视角大小缩放',
+            'FirstPersonScale': '第一人称大小缩放',
+            'FirstPersonOffset': '第一人称位置偏移',
+            'FirstPersonRotation': '第一人称物品旋转',
+            'InHandScale': '在手里的大小缩放',
+            'InHandOffset': '在手里的位置偏移',
+            'InHandRotation': '在手里时旋转角度',
+            'CraftingId': '合成标识',
+            'DefaultCreativeData': '默认创造模式数据',
+            'IsCollidable': '是否可碰撞',
+            'IsPlaceable': '是否可放置',
+            'IsDiggingTransparent': '被挖掘时是否穿过',
+            'IsPlacementTransparent': '放置时是否穿过',
+            'DefaultIsInteractive': '默认是否可交互',
+            'IsEditable': '是否可编辑',
+            'IsNonDuplicable': '是否不可复制',
+            'IsGatherable': '是否可收集',
+            'HasCollisionBehavior': '是否有碰撞动作',
+            'KillsWhenStuck': '卡住时杀死',
+            'IsFluidBlocker': '能否阻挡流体',
+            'IsTransparent': '是否透明',
+            'GenerateFacesForSameNeighbors': '生成相同邻居面',
+            'DefaultShadowStrength': '阴影强度',
+            'LightAttenuation': '光衰减',
+            'DefaultEmittedLightAmount': '发光强度',
+            'ObjectShadowStrength': '物体阴影强度',
+            'DefaultDropContent': '默认掉落内容',
+            'DefaultDropCount': '默认掉落数量',
+            'DefaultExperienceCount': '默认经验数量',
+            'RequiredToolLevel': '需求工具等级',
+            'MaxStacking': '最大背包堆叠',
+            'SleepSuitability': '适合睡觉',
+            'FrictionFactor': '摩擦系数',
+            'Density': '密度',
+            'NoAutoJump': '不自动跳跃',
+            'NoSmoothRise': '不流畅上升',
+            'FuelHeatLevel': '燃料等级',
+            'FuelFireDuration': '燃料燃烧时长',
+            'DefaultSoundMaterialName': '默认声音材料名称',
+            'ShovelPower': '铲子效率',
+            'QuarryPower': '镐子效率',
+            'HackPower': '斧头效率',
+            'DefaultMeleePower': '近战攻击力',
+            'DefaultMeleeHitProbability': '默认近战命中率',
+            'DefaultProjectilePower': '投掷攻击力',
+            'ToolLevel': '工具等级',
+            'PlayerLevelRequired': '需求玩家等级',
+            'Durability': '工具耐久度',
+            'IsAimable': '是否可瞄准',
+            'IsStickable': '是否卡住',
+            'AlignToVelocity': '成直线速率',
+            'ProjectileSpeed': '投掷速度',
+            'ProjectileDamping': '投掷速度衰减',
+            'ProjectileTipOffset': '扔出点偏移',
+            'DisintegratesOnHit': '撞击时碎裂',
+            'ProjectileStickProbability': '卡住投掷物可能性',
+            'DefaultHeat': '默认热量',
+            'FireDuration': '露天点火时长',
+            'ExplosionResilience': '爆炸抗性',
+            'DefaultExplosionPressure': '默认爆炸压力',
+            'DefaultExplosionIncendiary': '默认爆炸燃烧',
+            'ExplosionKeepsPickables': '爆炸透明',
+            'DigMethod': '挖掘方法',
+            'DigResilience': '挖掘抗性',
+            'ProjectileResilience': '弹射物抗性',
+            'DefaultNutritionalValue': '营养价值',
+            'DefaultSicknessProbability': '默认生病概率',
+            'FoodType': '食物类型',
+            'DefaultRotPeriod': '默认腐败时间',
+            'DefaultTextureSlot': '默认材质位置',
+            'DestructionDebrisScale': '破坏碎片大小缩放',
+            'DefaultDescription': '默认描述',
+            '': '空列',
+        };
+
+        const typeMapping = {
+            'Class Name': 'string',
+            'DefaultDisplayName': 'string',
+            'DefaultCategory': 'string',
+            'Behaviors': 'string',
+            'DisplayOrder': 'int',
+            'DefaultIconBlockOffset': 'Vector3',
+            'DefaultIconViewOffset': 'Vector3',
+            'DefaultIconViewScale': 'float',
+            'FirstPersonScale': 'float',
+            'FirstPersonOffset': 'Vector3',
+            'FirstPersonRotation': 'Vector3',
+            'InHandScale': 'float',
+            'InHandOffset': 'Vector3',
+            'InHandRotation': 'Vector3',
+            'CraftingId': 'string',
+            'DefaultCreativeData': 'int',
+            'IsCollidable': 'bool',
+            'IsPlaceable': 'bool',
+            'IsDiggingTransparent': 'bool',
+            'IsPlacementTransparent': 'bool',
+            'DefaultIsInteractive': 'bool',
+            'IsEditable': 'bool',
+            'IsNonDuplicable': 'bool',
+            'IsGatherable': 'bool',
+            'HasCollisionBehavior': 'bool',
+            'KillsWhenStuck': 'bool',
+            'IsFluidBlocker': 'bool',
+            'IsTransparent': 'bool',
+            'GenerateFacesForSameNeighbors': 'bool',
+            'DefaultShadowStrength': 'int',
+            'LightAttenuation': 'int',
+            'DefaultEmittedLightAmount': 'int',
+            'ObjectShadowStrength': 'float',
+            'DefaultDropContent': 'string',
+            'DefaultDropCount': 'float',
+            'DefaultExperienceCount': 'float',
+            'RequiredToolLevel': 'int',
+            'MaxStacking': 'int',
+            'SleepSuitability': 'float',
+            'FrictionFactor': 'float',
+            'Density': 'float',
+            'NoAutoJump': 'bool',
+            'NoSmoothRise': 'bool',
+            'FuelHeatLevel': 'int',
+            'FuelFireDuration': 'float',
+            'DefaultSoundMaterialName': 'string',
+            'ShovelPower': 'float',
+            'QuarryPower': 'float',
+            'HackPower': 'float',
+            'DefaultMeleePower': 'float',
+            'DefaultMeleeHitProbability': 'float',
+            'DefaultProjectilePower': 'float',
+            'ToolLevel': 'int',
+            'PlayerLevelRequired': 'int',
+            'Durability': 'int',
+            'IsAimable': 'bool',
+            'IsStickable': 'bool',
+            'AlignToVelocity': 'bool',
+            'ProjectileSpeed': 'float',
+            'ProjectileDamping': 'float',
+            'ProjectileTipOffset': 'float',
+            'DisintegratesOnHit': 'bool',
+            'ProjectileStickProbability': 'float',
+            'DefaultHeat': 'float',
+            'FireDuration': 'float',
+            'ExplosionResilience': 'float',
+            'DefaultExplosionPressure': 'float',
+            'DefaultExplosionIncendiary': 'bool',
+            'ExplosionKeepsPickables': 'bool',
+            'DigMethod': 'BlockDigMethod',
+            'DigResilience': 'float',
+            'ProjectileResilience': 'float',
+            'DefaultNutritionalValue': 'float',
+            'DefaultSicknessProbability': 'float',
+            'FoodType': 'FoodType',
+            'DefaultRotPeriod': 'int',
+            'DefaultTextureSlot': 'int',
+            'DestructionDebrisScale': 'float',
+            'DefaultDescription': 'string'
+        };
+
+        const typeDescriptions = {
+            'bool': 'TRUE（是）、FALSE（否）',
+            'int': '-2147483648 到 2147483647的整数，或Infinity(无穷大)',
+            'float': '±3.40282 * 10^38之间的整数和小数，或Infinity(无穷大)',
+            'string': '任意文本，除了";"',
+            'Vector3': '逗号分隔的三个float(浮点数)',
+            'BlockDigMethod': 'None(无)、Shovel(铲子)、Quarry(镐子)、Hack(斧头)',
+            'FoodType': 'None(无)、Meat(肉)、Fish(鱼肉)、Fruit(水果)、Grass(草)、Bread(面包)'
+        };
+
+        let csvData = [];
+        let headers = [];
+        let updateTimer = null;
+
+        function showStatus(message, isSuccess = true) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = 'status ' + (isSuccess ? 'success' : 'error');
+            if (isSuccess) {
+                setTimeout(() => {
+                    statusDiv.className = 'status';
+                }, 3000);
+            }
+        }
+
+        function parseCSV(csvText) {
+            const lines = csvText.split(/\r?\n/);
+            const result = [];
+
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].trim() === '') continue;
+
+                const row = [];
+                let current = '';
+                let inQuotes = false;
+
+                for (let j = 0; j < lines[i].length; j++) {
+                    const char = lines[i][j];
+
+                    if (char === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (char === ';' && !inQuotes) {
+                        row.push(current.trim());
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                row.push(current.trim());
+                result.push(row);
+            }
+            return result;
+        }
+
+        function convertToCSV(data) {
+            return data.map(row =>
+                row.map(field => {
+                    if (field.includes(';') || field.includes('"') || field.includes('\n')) {
+                        return '"' + field.replace(/"/g, '""') + '"';
+                    }
+                    return field;
+                }).join(';')
+            ).join('\n');
+        }
+
+        function renderTable() {
+            if (csvData.length === 0) {
+                document.getElementById('tableContainer').innerHTML = '<p>没有数据可显示</p>';
+                return;
+            }
+
+            let html = '<div class="table-wrapper"><table><thead><tr>';
+
+            for (let j = 0; j < csvData[0].length; j++) {
+                const header = csvData[0][j];
+                const chineseHeader = fieldMapping[header] || header;
+                html += `<th title="${header}">${chineseHeader}</th>`;
+            }
+
+            html += '</tr><tr class="type-row">';
+
+            for (let j = 0; j < csvData[0].length; j++) {
+                const header = csvData[0][j];
+                const dataType = typeMapping[header] || '';
+                html += `<th class="type-header" title="${typeDescriptions[dataType] ?? ''}">${dataType}</th>`;
+            }
+
+            html += '</tr></thead><tbody>';
+
+            for (let i = 1; i < csvData.length; i++) {
+                html += '<tr>';
+                for (let j = 0; j < csvData[i].length; j++) {
+                    const cellValue = j < csvData[i].length ? csvData[i][j] : '';
+                    html += `<td class="edit-cell" contenteditable="true"
+                             data-row="${i}" data-col="${j}"
+                             onfocus="highlightRow(this)"
+                             onblur="onCellBlur(this)">${escapeHtml(cellValue)}</td>`;
+                }
+                html += '</tr>';
+            }
+
+            html += '</tbody></table></div>';
+            document.getElementById('tableContainer').innerHTML = html;
+
+            requestAnimationFrame(() => {
+                const firstHeaderRow = document.querySelector('thead tr:first-child');
+                const typeRowCells = document.querySelectorAll('thead tr.type-row th');
+                if (firstHeaderRow && typeRowCells.length > 0) {
+                    const firstRowHeight = firstHeaderRow.getBoundingClientRect().height;
+                    typeRowCells.forEach(th => {
+                        th.style.top = firstRowHeight + 'px';
+                    });
+                }
+            });
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function highlightRow(cell) {
+            const highlightedRows = document.querySelectorAll('tr.highlighted');
+            highlightedRows.forEach(row => row.classList.remove('highlighted'));
+
+            const row = cell.closest('tr');
+            if (row) {
+                row.classList.add('highlighted');
+            }
+        }
+
+        function removeHighlight(cell) {
+            const row = cell.closest('tr');
+            if (row) {
+                row.classList.remove('highlighted');
+            }
+        }
+
+        function onCellBlur(cell) {
+            const rowIdx = parseInt(cell.dataset.row);
+            const colIdx = parseInt(cell.dataset.col);
+            const value = cell.textContent;
+
+            removeHighlight(cell);
+            updateCellValue(rowIdx, colIdx, value);
+        }
+
+        function updateCellValue(rowIdx, colIdx, value) {
+            if (rowIdx < csvData.length && colIdx < csvData[rowIdx].length) {
+                if (csvData[rowIdx][colIdx] === value) {
+                    return;
+                }
+                csvData[rowIdx][colIdx] = value;
+            } else if (rowIdx < csvData.length) {
+                for (let i = csvData[rowIdx].length; i <= colIdx; i++) {
+                    csvData[rowIdx].push('');
+                }
+                csvData[rowIdx][colIdx] = value;
+            }
+
+            notifyUpdate();
+        }
+
+        function notifyUpdate() {
+            if (updateTimer) {
+                clearTimeout(updateTimer);
+            }
+            updateTimer = setTimeout(() => {
+                const csvContent = convertToCSV(csvData);
+                vscode.postMessage({
+                    type: 'update',
+                    content: csvContent
+                });
+            }, 300);
+        }
+
+        function saveCSV() {
+            if (csvData.length === 0) {
+                showStatus('没有数据可保存', false);
+                return;
+            }
+
+            try {
+                const csvContent = convertToCSV(csvData);
+                vscode.postMessage({
+                    type: 'save',
+                    content: csvContent
+                });
+                showStatus('文件保存成功');
+            } catch (error) {
+                showStatus('保存文件时出错: ' + error.message, false);
+            }
+        }
+
+        window.addEventListener('message', event => {
+            const msg = event.data;
+            if (msg.type === 'init') {
+                try {
+                    csvData = parseCSV(msg.content);
+                    if (csvData.length === 0) {
+                        document.getElementById('tableContainer').innerHTML = '<p>文件为空或无法解析</p>';
+                        return;
+                    }
+                    headers = [...csvData[0]];
+                    renderTable();
+
+                    const fileNameSpan = document.getElementById('fileName');
+                    if (msg.fileName) {
+                        fileNameSpan.textContent = '当前文件: ' + msg.fileName;
+                    }
+
+                    showStatus('文件加载成功');
+                } catch (error) {
+                    showStatus('解析文件时出错: ' + error.message, false);
+                }
+            }
+        });
+
+        document.addEventListener('keydown', e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                saveCSV();
+            }
+
+            if (e.key === 'Tab') {
+                const cell = e.target;
+                if (cell.classList && cell.classList.contains('edit-cell')) {
+                    e.preventDefault();
+                    const row = parseInt(cell.dataset.row);
+                    const col = parseInt(cell.dataset.col);
+                    const maxCol = csvData[0] ? csvData[0].length - 1 : 0;
+
+                    let nextRow = row;
+                    let nextCol = col + 1;
+
+                    if (nextCol > maxCol) {
+                        nextCol = 0;
+                        nextRow = row + 1;
+                    }
+
+                    const nextCell = document.querySelector(`td[data-row="${nextRow}"][data-col="${nextCol}"]`);
+                    if (nextCell) {
+                        nextCell.focus();
+                    }
+                }
+            }
+        });
+
+        vscode.postMessage({ type: 'ready' });
+    </script>
+</body>
+
+</html>
