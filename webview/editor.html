@@ -4,55 +4,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CSV编辑器 - 方块数据编辑</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             font-family: 'Microsoft YaHei', sans-serif;
-            margin: 10px;
             background-color: var(--vscode-editor-background, #f5f5f5);
             color: var(--vscode-editor-foreground, #333);
-        }
-
-        .container {
-            margin: 0 auto;
-            background-color: var(--vscode-editor-background, white);
-            padding: 15px;
-            border-radius: 8px;
-        }
-
-        h1 {
-            text-align: center;
-            color: var(--vscode-editor-foreground, #333);
-            margin-bottom: 15px;
-            font-size: 1.4em;
-        }
-
-        .controls {
-            margin-bottom: 15px;
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-
-        button {
-            background-color: #2196F3;
-            color: white;
-            padding: 8px 14px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 13px;
-        }
-
-        button:hover {
-            background-color: #1976D2;
+            overflow: hidden;
         }
 
         .table-wrapper {
             overflow: auto;
-            max-height: 75vh;
-            margin-top: 15px;
+            height: 100vh;
         }
 
         table {
@@ -153,90 +121,49 @@
             background-color: var(--vscode-editor-selectionBackground, #add6ff) !important;
         }
 
-        .instructions {
-            background-color: var(--vscode-textBlockQuote-background, #e7f3ff);
-            padding: 12px;
-            border-radius: 4px;
-            margin-bottom: 15px;
-            border-left: 4px solid var(--vscode-textLink-foreground, #2196F3);
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 13px;
+            z-index: 9999;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            pointer-events: none;
         }
 
-        .instructions h3 {
-            margin-top: 0;
-            color: var(--vscode-textLink-foreground, #1976D2);
-            font-size: 1em;
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
         }
 
-        .instructions ul {
-            margin-bottom: 0;
-            padding-left: 20px;
-            font-size: 0.9em;
+        .toast.success {
+            background-color: #4caf50;
+            color: white;
         }
 
-        .instructions li {
-            margin-bottom: 3px;
-        }
-
-        .status {
-            margin-top: 10px;
-            padding: 8px;
-            border-radius: 4px;
-            display: none;
-            font-size: 0.9em;
-        }
-
-        .status.success {
-            background-color: #d4edda;
-            color: #155724;
-            display: block;
-        }
-
-        .status.error {
-            background-color: #f8d7da;
-            color: #721c24;
-            display: block;
-        }
-
-        .file-name {
-            font-size: 0.9em;
-            color: var(--vscode-descriptionForeground, #666);
-            margin-bottom: 10px;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: var(--vscode-descriptionForeground, #666);
+        .toast.error {
+            background-color: #f44336;
+            color: white;
         }
     </style>
 </head>
 
 <body>
-    <div class="container">
-        <h1>方块数据CSV编辑器</h1>
-
-        <div class="instructions">
-            <h3>使用说明</h3>
-            <ul>
-                <li>在 VS Code 中打开 CSV 或 TXT 文件，自动以表格形式加载（支持以分号";"分隔的文件）</li>
-                <li>点击单元格即可编辑内容，按 Tab 键切换到下一个单元格</li>
-                <li>编辑完成后，按 Ctrl+S 保存，内容将直接写回原文件</li>
-                <li>表头字段已自动转换为中文显示，鼠标悬停可查看英文字段名</li>
-                <li>类型行显示各字段的数据类型，鼠标悬停可查看类型说明</li>
-            </ul>
-        </div>
-
-        <div class="controls">
-            <button id="saveBtn" onclick="saveCSV()">保存 (Ctrl+S)</button>
-            <span id="fileName" class="file-name"></span>
-        </div>
-
-        <div id="status" class="status"></div>
-
-        <div id="tableContainer">
-            <p class="loading">正在加载文件内容...</p>
-        </div>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr id="headerRow"></tr>
+                <tr class="type-row" id="typeRow"></tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+        </table>
     </div>
+
+    <div id="toast" class="toast"></div>
 
     <script>
         const vscode = acquireVsCodeApi();
@@ -419,16 +346,22 @@
         let csvData = [];
         let headers = [];
         let updateTimer = null;
+        let toastTimer = null;
 
-        function showStatus(message, isSuccess = true) {
-            const statusDiv = document.getElementById('status');
-            statusDiv.textContent = message;
-            statusDiv.className = 'status ' + (isSuccess ? 'success' : 'error');
-            if (isSuccess) {
-                setTimeout(() => {
-                    statusDiv.className = 'status';
-                }, 3000);
-            }
+        function showToast(message, isSuccess = true) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast ' + (isSuccess ? 'success' : 'error');
+
+            if (toastTimer) { clearTimeout(toastTimer); }
+
+            requestAnimationFrame(() => {
+                toast.classList.add('show');
+            });
+
+            toastTimer = setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2000);
         }
 
         function parseCSV(csvText) {
@@ -472,43 +405,42 @@
         }
 
         function renderTable() {
-            if (csvData.length === 0) {
-                document.getElementById('tableContainer').innerHTML = '<p>没有数据可显示</p>';
-                return;
-            }
+            if (csvData.length === 0) { return; }
 
-            let html = '<div class="table-wrapper"><table><thead><tr>';
+            const headerRow = document.getElementById('headerRow');
+            const typeRow = document.getElementById('typeRow');
+            const tableBody = document.getElementById('tableBody');
+
+            let headerHtml = '';
+            let typeHtml = '';
 
             for (let j = 0; j < csvData[0].length; j++) {
                 const header = csvData[0][j];
                 const chineseHeader = fieldMapping[header] || header;
-                html += `<th title="${header}">${chineseHeader}</th>`;
-            }
+                headerHtml += `<th title="${header}">${chineseHeader}</th>`;
 
-            html += '</tr><tr class="type-row">';
-
-            for (let j = 0; j < csvData[0].length; j++) {
-                const header = csvData[0][j];
                 const dataType = typeMapping[header] || '';
-                html += `<th class="type-header" title="${typeDescriptions[dataType] ?? ''}">${dataType}</th>`;
+                typeHtml += `<th class="type-header" title="${typeDescriptions[dataType] ?? ''}">${dataType}</th>`;
             }
 
-            html += '</tr></thead><tbody>';
+            headerRow.innerHTML = headerHtml;
+            typeRow.innerHTML = typeHtml;
+
+            let bodyHtml = '';
 
             for (let i = 1; i < csvData.length; i++) {
-                html += '<tr>';
+                bodyHtml += '<tr>';
                 for (let j = 0; j < csvData[i].length; j++) {
                     const cellValue = j < csvData[i].length ? csvData[i][j] : '';
-                    html += `<td class="edit-cell" contenteditable="true"
-                             data-row="${i}" data-col="${j}"
-                             onfocus="highlightRow(this)"
-                             onblur="onCellBlur(this)">${escapeHtml(cellValue)}</td>`;
+                    bodyHtml += `<td class="edit-cell" contenteditable="true"
+                                 data-row="${i}" data-col="${j}"
+                                 onfocus="highlightRow(this)"
+                                 onblur="onCellBlur(this)">${escapeHtml(cellValue)}</td>`;
                 }
-                html += '</tr>';
+                bodyHtml += '</tr>';
             }
 
-            html += '</tbody></table></div>';
-            document.getElementById('tableContainer').innerHTML = html;
+            tableBody.innerHTML = bodyHtml;
 
             requestAnimationFrame(() => {
                 const firstHeaderRow = document.querySelector('thead tr:first-child');
@@ -585,7 +517,7 @@
 
         function saveCSV() {
             if (csvData.length === 0) {
-                showStatus('没有数据可保存', false);
+                showToast('没有数据可保存', false);
                 return;
             }
 
@@ -595,9 +527,8 @@
                     type: 'save',
                     content: csvContent
                 });
-                showStatus('文件保存成功');
             } catch (error) {
-                showStatus('保存文件时出错: ' + error.message, false);
+                showToast('保存失败: ' + error.message, false);
             }
         }
 
@@ -606,21 +537,17 @@
             if (msg.type === 'init') {
                 try {
                     csvData = parseCSV(msg.content);
-                    if (csvData.length === 0) {
-                        document.getElementById('tableContainer').innerHTML = '<p>文件为空或无法解析</p>';
-                        return;
-                    }
+                    if (csvData.length === 0) { return; }
                     headers = [...csvData[0]];
                     renderTable();
-
-                    const fileNameSpan = document.getElementById('fileName');
-                    if (msg.fileName) {
-                        fileNameSpan.textContent = '当前文件: ' + msg.fileName;
-                    }
-
-                    showStatus('文件加载成功');
                 } catch (error) {
-                    showStatus('解析文件时出错: ' + error.message, false);
+                    showToast('解析文件时出错: ' + error.message, false);
+                }
+            } else if (msg.type === 'saveResult') {
+                if (msg.success) {
+                    showToast('已保存');
+                } else {
+                    showToast('保存失败', false);
                 }
             }
         });
@@ -654,8 +581,6 @@
                 }
             }
         });
-
-        vscode.postMessage({ type: 'ready' });
     </script>
 </body>
 

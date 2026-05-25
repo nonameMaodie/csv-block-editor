@@ -2,189 +2,154 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 
+const activePanels = new Map<string, vscode.WebviewPanel>();
+
 export function activate(context: vscode.ExtensionContext) {
-    const provider = new CsvBlockEditorProvider(context);
     context.subscriptions.push(
-        vscode.window.registerCustomEditorProvider(
-            'csvBlockEditor.editor',
-            provider,
-            {
-                webviewOptions: {
-                    retainContextWhenHidden: true
-                },
-                supportsMultipleEditorsPerDocument: false
+        vscode.commands.registerCommand('csvBlockEditor.toggleTableView', async () => {
+            const activeWebviewKey = findActiveWebviewKey();
+
+            if (activeWebviewKey) {
+                const panel = activePanels.get(activeWebviewKey);
+                if (panel) {
+                    const uri = vscode.Uri.parse(activeWebviewKey);
+                    const viewColumn = panel.viewColumn ?? vscode.ViewColumn.One;
+                    panel.dispose();
+                    activePanels.delete(activeWebviewKey);
+                    setTableViewContext(false);
+                    try {
+                        const doc = await vscode.workspace.openTextDocument(uri);
+                        await vscode.window.showTextDocument(doc, viewColumn);
+                    } catch { }
+                }
+                return;
             }
-        )
+
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) { return; }
+
+            const doc = editor.document;
+            const ext = path.extname(doc.uri.fsPath).toLowerCase();
+            if (ext !== '.csv' && ext !== '.txt') { return; }
+
+            const key = doc.uri.toString();
+
+            if (activePanels.has(key)) {
+                const panel = activePanels.get(key)!;
+                panel.reveal();
+                return;
+            }
+
+            openTableView(context, doc, editor.viewColumn ?? vscode.ViewColumn.One);
+        })
     );
 }
 
-export function deactivate() { }
-
-class CsvDocument implements vscode.CustomDocument {
-    private _content: string;
-    private _onDidChange = new vscode.EventEmitter<vscode.CustomDocumentEditEvent<CsvDocument>>();
-
-    readonly onDidChange = this._onDidChange.event;
-    private _isDirty = false;
-
-    constructor(readonly uri: vscode.Uri, initialContent: string) {
-        this._content = initialContent;
+function findActiveWebviewKey(): string | undefined {
+    for (const [key, panel] of activePanels) {
+        if (panel.active) {
+            return key;
+        }
     }
+    return undefined;
+}
 
-    get content(): string {
-        return this._content;
-    }
+function openTableView(context: vscode.ExtensionContext, document: vscode.TextDocument, viewColumn: vscode.ViewColumn) {
+    const key = document.uri.toString();
+    const fileName = path.basename(document.uri.fsPath);
 
-    get isDirty(): boolean {
-        return this._isDirty;
-    }
+    const panel = vscode.window.createWebviewPanel(
+        'csvBlockEditor',
+        fileName + ' (表格视图)',
+        { viewColumn, preserveFocus: false },
+        {
+            enableScripts: true,
+            retainContextWhenHidden: true
+        }
+    );
 
-    updateContent(newContent: string): void {
-        this._content = newContent;
-        this._isDirty = true;
-        this._onDidChange.fire({
-            document: this,
-            label: 'edit',
-            undo: () => { },
-            redo: () => { }
+    panel.iconPath = new vscode.ThemeIcon('table');
+
+    const htmlPath = path.join(context.extensionPath, 'webview', 'editor.html');
+    let html = fs.readFileSync(htmlPath, 'utf-8');
+
+    const nonce = getNonce();
+    const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">`;
+    html = html.replace('</head>', csp + '\n</head>');
+    html = html.replace(/<script>/g, `<script nonce="${nonce}">`);
+
+    panel.webview.html = html;
+
+    setTimeout(() => {
+        panel.webview.postMessage({
+            type: 'init',
+            content: document.getText(),
+            fileName: fileName
         });
-    }
+    }, 100);
 
-    revert(content: string): void {
-        this._content = content;
-        this._isDirty = false;
-    }
+    panel.webview.onDidReceiveMessage(async (msg: { type: string; content?: string }) => {
+        switch (msg.type) {
+            case 'update':
+                if (msg.content !== undefined) {
+                    await updateDocument(document, msg.content);
+                }
+                break;
+            case 'save':
+                if (msg.content !== undefined) {
+                    await saveToDocument(document, msg.content);
+                    panel.webview.postMessage({ type: 'saveResult', success: true });
+                }
+                break;
+            case 'backToText':
+                panel.dispose();
+                break;
+        }
+    });
 
-    markSaved(): void {
-        this._isDirty = false;
-    }
+    panel.onDidChangeViewState(() => {
+        if (panel.active) {
+            setTableViewContext(true);
+        }
+    });
 
-    dispose(): void {
-        this._onDidChange.dispose();
+    panel.onDidDispose(() => {
+        activePanels.delete(key);
+        if (activePanels.size === 0) {
+            setTableViewContext(false);
+        }
+        vscode.window.showTextDocument(document, viewColumn, false);
+    });
+
+    activePanels.set(key, panel);
+    setTableViewContext(true);
+}
+
+async function updateDocument(document: vscode.TextDocument, newContent: string) {
+    const edit = new vscode.WorkspaceEdit();
+    const fullRange = new vscode.Range(
+        document.positionAt(0),
+        document.positionAt(document.getText().length)
+    );
+    edit.replace(document.uri, fullRange, newContent);
+    await vscode.workspace.applyEdit(edit);
+}
+
+async function saveToDocument(document: vscode.TextDocument, newContent: string) {
+    const edit = new vscode.WorkspaceEdit();
+    const fullRange = new vscode.Range(
+        document.positionAt(0),
+        document.positionAt(document.getText().length)
+    );
+    edit.replace(document.uri, fullRange, newContent);
+    await vscode.workspace.applyEdit(edit);
+    if (document.isDirty) {
+        await document.save();
     }
 }
 
-class CsvBlockEditorProvider implements vscode.CustomEditorProvider<CsvDocument> {
-    private readonly _onDidChangeCustomDocument = new vscode.EventEmitter<vscode.CustomDocumentEditEvent<CsvDocument>>();
-    readonly onDidChangeCustomDocument = this._onDidChangeCustomDocument.event;
-
-    constructor(private readonly context: vscode.ExtensionContext) { }
-
-    async openCustomDocument(
-        uri: vscode.Uri,
-        _openContext: vscode.CustomDocumentOpenContext,
-        _token: vscode.CancellationToken
-    ): Promise<CsvDocument> {
-        const content = await fs.promises.readFile(uri.fsPath, 'utf-8');
-        const doc = new CsvDocument(uri, content);
-
-        doc.onDidChange((e) => {
-            this._onDidChangeCustomDocument.fire(e);
-        });
-
-        return doc;
-    }
-
-    async resolveCustomEditor(
-        document: CsvDocument,
-        webviewPanel: vscode.WebviewPanel,
-        _token: vscode.CancellationToken
-    ): Promise<void> {
-        webviewPanel.webview.options = {
-            enableScripts: true,
-            localResourceRoots: []
-        };
-
-        const htmlPath = path.join(this.context.extensionPath, 'webview', 'editor.html');
-        let html = fs.readFileSync(htmlPath, 'utf-8');
-
-        const nonce = getNonce();
-        const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">`;
-        html = html.replace('</head>', csp + '\n</head>');
-        html = html.replace(/<script>/g, `<script nonce="${nonce}">`);
-
-        webviewPanel.webview.html = html;
-
-        webviewPanel.webview.postMessage({
-            type: 'init',
-            content: document.content,
-            fileName: path.basename(document.uri.fsPath)
-        });
-
-        webviewPanel.webview.onDidReceiveMessage(async (msg: { type: string; content?: string }) => {
-            switch (msg.type) {
-                case 'update':
-                    if (msg.content !== undefined) {
-                        document.updateContent(msg.content);
-                    }
-                    break;
-                case 'save':
-                    await this.saveDocument(document);
-                    break;
-                case 'ready':
-                    webviewPanel.webview.postMessage({
-                        type: 'init',
-                        content: document.content,
-                        fileName: path.basename(document.uri.fsPath)
-                    });
-                    break;
-            }
-        });
-
-        webviewPanel.onDidChangeViewState((e) => {
-            if (e.webviewPanel.visible) {
-                webviewPanel.webview.postMessage({
-                    type: 'init',
-                    content: document.content,
-                    fileName: path.basename(document.uri.fsPath)
-                });
-            }
-        });
-    }
-
-    private async saveDocument(document: CsvDocument): Promise<void> {
-        await fs.promises.writeFile(document.uri.fsPath, document.content, 'utf-8');
-        document.markSaved();
-    }
-
-    async saveCustomDocument(
-        document: CsvDocument,
-        _cancellation: vscode.CancellationToken
-    ): Promise<void> {
-        await this.saveDocument(document);
-    }
-
-    async saveCustomDocumentAs(
-        document: CsvDocument,
-        destination: vscode.Uri,
-        _cancellation: vscode.CancellationToken
-    ): Promise<void> {
-        await fs.promises.writeFile(destination.fsPath, document.content, 'utf-8');
-    }
-
-    async revertCustomDocument(
-        document: CsvDocument,
-        _cancellation: vscode.CancellationToken
-    ): Promise<void> {
-        const content = await fs.promises.readFile(document.uri.fsPath, 'utf-8');
-        document.revert(content);
-    }
-
-    async backupCustomDocument(
-        document: CsvDocument,
-        context: vscode.CustomDocumentBackupContext,
-        _cancellation: vscode.CancellationToken
-    ): Promise<vscode.CustomDocumentBackup> {
-        await fs.promises.writeFile(context.destination.fsPath, document.content, 'utf-8');
-        return {
-            id: context.destination.fsPath,
-            delete: () => {
-                try {
-                    fs.unlinkSync(context.destination.fsPath);
-                } catch { }
-            }
-        };
-    }
+function setTableViewContext(active: boolean) {
+    vscode.commands.executeCommand('setContext', 'csvBlockEditor.tableViewActive', active);
 }
 
 function getNonce(): string {
@@ -195,3 +160,5 @@ function getNonce(): string {
     }
     return result;
 }
+
+export function deactivate() { }

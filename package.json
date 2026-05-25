@@ -2,8 +2,9 @@
   "name": "csv-block-editor",
   "displayName": "方块数据CSV编辑器",
   "description": "用表格形式编辑生存战争方块数据CSV/TXT文件，支持分号分隔、中文字段映射、数据类型标注",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "local",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -11,25 +12,26 @@
     "Other"
   ],
   "activationEvents": [
-    "onCustomEditor:csvBlockEditor.editor"
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
-    "customEditors": [
+    "commands": [
       {
-        "viewType": "csvBlockEditor.editor",
-        "displayName": "方块数据CSV编辑器",
-        "selector": [
-          {
-            "filenamePattern": "*.csv"
-          },
-          {
-            "filenamePattern": "*.txt"
-          }
-        ],
-        "priority": "option"
+        "command": "csvBlockEditor.toggleTableView",
+        "title": "切换表格视图",
+        "icon": "$(table)"
       }
-    ]
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "csvBlockEditor.toggleTableView",
+          "when": "resourceExtname == .csv || resourceExtname == .txt || csvBlockEditor.tableViewActive",
+          "group": "navigation"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "tsc -p ./",
