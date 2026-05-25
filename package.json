@@ -1,15 +1,32 @@
 {
   "name": "csv-block-editor",
-  "displayName": "方块数据CSV编辑器",
-  "description": "用表格形式编辑生存战争方块数据CSV/TXT文件，支持分号分隔、中文字段映射、数据类型标注",
+  "displayName": "CSV Block Editor For Survivalcraft",
+  "description": "Spreadsheet editor for Survivalcraft mod development. Edit semicolon-separated CSV/TXT block data files in a table view with Chinese field mapping, data type annotations, column resizing, and seamless toggle between text and table modes.",
   "version": "0.3.0",
   "publisher": "local",
   "license": "MIT",
+  "icon": "csv-block-editor.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nonameMaodie/csv-block-editor"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
+    "Data Science",
     "Other"
+  ],
+  "keywords": [
+    "csv",
+    "table",
+    "spreadsheet",
+    "editor",
+    "semicolon",
+    "data",
+    "survivalcraft",
+    "sc",
+    "生存战争"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -19,7 +36,7 @@
     "commands": [
       {
         "command": "csvBlockEditor.toggleTableView",
-        "title": "切换表格视图",
+        "title": "CSV Block Editor: Toggle Table View",
         "icon": "$(table)"
       }
     ],
