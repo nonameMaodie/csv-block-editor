@@ -433,9 +433,7 @@
                 for (let j = 0; j < csvData[i].length; j++) {
                     const cellValue = j < csvData[i].length ? csvData[i][j] : '';
                     bodyHtml += `<td class="edit-cell" contenteditable="true"
-                                 data-row="${i}" data-col="${j}"
-                                 onfocus="highlightRow(this)"
-                                 onblur="onCellBlur(this)">${escapeHtml(cellValue)}</td>`;
+                                 data-row="${i}" data-col="${j}">${escapeHtml(cellValue)}</td>`;
                 }
                 bodyHtml += '</tr>';
             }
@@ -450,6 +448,24 @@
                     typeRowCells.forEach(th => {
                         th.style.top = firstRowHeight + 'px';
                     });
+                }
+            });
+        }
+
+        function setupEventDelegation() {
+            const tableBody = document.getElementById('tableBody');
+
+            tableBody.addEventListener('focusin', function (e) {
+                const cell = e.target;
+                if (cell.classList && cell.classList.contains('edit-cell')) {
+                    highlightRow(cell);
+                }
+            });
+
+            tableBody.addEventListener('focusout', function (e) {
+                const cell = e.target;
+                if (cell.classList && cell.classList.contains('edit-cell')) {
+                    onCellBlur(cell);
                 }
             });
         }
@@ -540,6 +556,7 @@
                     if (csvData.length === 0) { return; }
                     headers = [...csvData[0]];
                     renderTable();
+                    setupEventDelegation();
                 } catch (error) {
                     showToast('解析文件时出错: ' + error.message, false);
                 }

@@ -57,6 +57,8 @@ function findActiveWebviewKey(): string | undefined {
 function openTableView(context: vscode.ExtensionContext, document: vscode.TextDocument, viewColumn: vscode.ViewColumn) {
     const key = document.uri.toString();
     const fileName = path.basename(document.uri.fsPath);
+    const fileUri = document.uri;
+    const filePath = document.uri.fsPath;
 
     const panel = vscode.window.createWebviewPanel(
         'csvBlockEditor',
@@ -92,12 +94,12 @@ function openTableView(context: vscode.ExtensionContext, document: vscode.TextDo
         switch (msg.type) {
             case 'update':
                 if (msg.content !== undefined) {
-                    await updateDocument(document, msg.content);
+                    await writeToFile(filePath, msg.content);
                 }
                 break;
             case 'save':
                 if (msg.content !== undefined) {
-                    await saveToDocument(document, msg.content);
+                    await writeToFile(filePath, msg.content);
                     panel.webview.postMessage({ type: 'saveResult', success: true });
                 }
                 break;
@@ -113,39 +115,23 @@ function openTableView(context: vscode.ExtensionContext, document: vscode.TextDo
         }
     });
 
-    panel.onDidDispose(() => {
+    panel.onDidDispose(async () => {
         activePanels.delete(key);
         if (activePanels.size === 0) {
             setTableViewContext(false);
         }
-        vscode.window.showTextDocument(document, viewColumn, false);
+        try {
+            const doc = await vscode.workspace.openTextDocument(fileUri);
+            await vscode.window.showTextDocument(doc, viewColumn, false);
+        } catch { }
     });
 
     activePanels.set(key, panel);
     setTableViewContext(true);
 }
 
-async function updateDocument(document: vscode.TextDocument, newContent: string) {
-    const edit = new vscode.WorkspaceEdit();
-    const fullRange = new vscode.Range(
-        document.positionAt(0),
-        document.positionAt(document.getText().length)
-    );
-    edit.replace(document.uri, fullRange, newContent);
-    await vscode.workspace.applyEdit(edit);
-}
-
-async function saveToDocument(document: vscode.TextDocument, newContent: string) {
-    const edit = new vscode.WorkspaceEdit();
-    const fullRange = new vscode.Range(
-        document.positionAt(0),
-        document.positionAt(document.getText().length)
-    );
-    edit.replace(document.uri, fullRange, newContent);
-    await vscode.workspace.applyEdit(edit);
-    if (document.isDirty) {
-        await document.save();
-    }
+async function writeToFile(filePath: string, newContent: string) {
+    await fs.promises.writeFile(filePath, newContent, 'utf-8');
 }
 
 function setTableViewContext(active: boolean) {
