@@ -106,6 +106,22 @@ function openTableView(context: vscode.ExtensionContext, document: vscode.TextDo
             case 'backToText':
                 panel.dispose();
                 break;
+            case 'requestInit':
+                try {
+                    const freshDoc = await vscode.workspace.openTextDocument(fileUri);
+                    panel.webview.postMessage({
+                        type: 'init',
+                        content: freshDoc.getText(),
+                        fileName: fileName
+                    });
+                } catch {
+                    panel.webview.postMessage({
+                        type: 'init',
+                        content: document.getText(),
+                        fileName: fileName
+                    });
+                }
+                break;
         }
     });
 

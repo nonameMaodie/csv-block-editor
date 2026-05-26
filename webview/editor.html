@@ -366,6 +366,30 @@
         let headers = [];
         let updateTimer = null;
         let toastTimer = null;
+        let tableInitialized = false;
+
+        function initializeTable(content, fileName) {
+            try {
+                csvData = parseCSV(content);
+                if (csvData.length === 0) { return; }
+                headers = [...csvData[0]];
+                vscode.setState({ content, fileName });
+                renderTable();
+                if (!tableInitialized) {
+                    setupEventDelegation();
+                    setupColumnResize();
+                    tableInitialized = true;
+                }
+            } catch (error) {
+                showToast('解析文件时出错: ' + error.message, false);
+            }
+        }
+
+        const savedState = vscode.getState();
+        if (savedState && savedState.content) {
+            initializeTable(savedState.content, savedState.fileName || '');
+        }
+        vscode.postMessage({ type: 'requestInit' });
 
         function showToast(message, isSuccess = true) {
             const toast = document.getElementById('toast');
@@ -634,16 +658,7 @@
         window.addEventListener('message', event => {
             const msg = event.data;
             if (msg.type === 'init') {
-                try {
-                    csvData = parseCSV(msg.content);
-                    if (csvData.length === 0) { return; }
-                    headers = [...csvData[0]];
-                    renderTable();
-                    setupEventDelegation();
-                    setupColumnResize();
-                } catch (error) {
-                    showToast('解析文件时出错: ' + error.message, false);
-                }
+                initializeTable(msg.content, msg.fileName);
             } else if (msg.type === 'saveResult') {
                 if (msg.success) {
                     showToast('已保存');

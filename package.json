@@ -2,7 +2,7 @@
   "name": "csv-block-editor",
   "displayName": "CSV Block Editor For Survivalcraft",
   "description": "Spreadsheet editor for Survivalcraft mod development. Edit semicolon-separated CSV/TXT block data files in a table view with Chinese field mapping, data type annotations, column resizing, and seamless toggle between text and table modes.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "nonameMaodie",
   "license": "MIT",
   "icon": "icon256.png",

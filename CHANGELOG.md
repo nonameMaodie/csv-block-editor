@@ -1,5 +1,11 @@
 # Change Log
 
+## [0.3.1]
+
+### Fixed
+
+- **Table view works after moving to new window**: Fixed the issue where the table view became a black screen when the tab was dragged to a new window. Added `requestInit` message handling to re-initialize the webview with data when it gets recreated, and implemented `getState`/`setState` persistence to preserve data across webview reconstruction.
+
 ## [0.3.0]
 
 ### Added
