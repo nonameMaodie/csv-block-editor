@@ -1012,14 +1012,38 @@
                     const maxCol = csvData[0] ? csvData[0].length - 1 : 0;
 
                     let nextRow = row;
-                    let nextCol = col + 1;
+                    let nextCol;
 
-                    if (nextCol > maxCol) {
-                        nextCol = 0;
-                        nextRow = row + 1;
+                    if (e.shiftKey) {
+                        nextCol = col - 1;
+                        if (nextCol < 0) {
+                            nextCol = maxCol;
+                            nextRow = row - 1;
+                        }
+                    } else {
+                        nextCol = col + 1;
+                        if (nextCol > maxCol) {
+                            nextCol = 0;
+                            nextRow = row + 1;
+                        }
                     }
 
                     const nextCell = document.querySelector(`td[data-row="${nextRow}"][data-col="${nextCol}"]`);
+                    if (nextCell) {
+                        nextCell.focus();
+                    }
+                }
+            }
+
+            if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+                const cell = e.target;
+                if (cell.classList && cell.classList.contains('edit-cell')) {
+                    e.preventDefault();
+                    const row = parseInt(cell.dataset.row);
+                    const col = parseInt(cell.dataset.col);
+
+                    const nextRow = e.shiftKey ? row - 1 : row + 1;
+                    const nextCell = document.querySelector(`td[data-row="${nextRow}"][data-col="${col}"]`);
                     if (nextCell) {
                         nextCell.focus();
                     }
