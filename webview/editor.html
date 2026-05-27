@@ -489,6 +489,9 @@
         let updateTimer = null;
         let toastTimer = null;
         let tableInitialized = false;
+        let undoStack = [];
+        let redoStack = [];
+        const MAX_UNDO = 100;
 
         function initializeTable(content, fileName) {
             try {
@@ -731,16 +734,26 @@
             updateCellValue(rowIdx, colIdx, value);
         }
 
+        function pushUndo(entry) {
+            undoStack.push(entry);
+            if (undoStack.length > MAX_UNDO) {
+                undoStack.shift();
+            }
+            redoStack = [];
+        }
+
         function updateCellValue(rowIdx, colIdx, value) {
             if (rowIdx < csvData.length && colIdx < csvData[rowIdx].length) {
                 if (csvData[rowIdx][colIdx] === value) {
                     return;
                 }
+                pushUndo({ row: rowIdx, col: colIdx, oldValue: csvData[rowIdx][colIdx], newValue: value });
                 csvData[rowIdx][colIdx] = value;
             } else if (rowIdx < csvData.length) {
                 for (let i = csvData[rowIdx].length; i <= colIdx; i++) {
                     csvData[rowIdx].push('');
                 }
+                pushUndo({ row: rowIdx, col: colIdx, oldValue: '', newValue: value });
                 csvData[rowIdx][colIdx] = value;
             }
 
@@ -897,6 +910,7 @@
             if (idx === -1) { return; }
 
             const newText = oldText.substring(0, idx) + replacement + oldText.substring(idx + query.length);
+            pushUndo({ row: rowIdx, col: colIdx, oldValue: oldText, newValue: newText });
             csvData[rowIdx][colIdx] = newText;
             cell.textContent = newText;
             notifyUpdate();
@@ -911,6 +925,7 @@
             const replacement = document.getElementById('replaceInput').value;
             const lowerQuery = query.toLowerCase();
             let count = 0;
+            const batchOld = [];
 
             const processed = new Set();
             searchMatches.forEach(cell => {
@@ -936,13 +951,66 @@
                         i++;
                     }
                 }
+                batchOld.push({ row: rowIdx, col: colIdx, oldValue: oldText, newValue: newText });
                 csvData[rowIdx][colIdx] = newText;
                 cell.textContent = newText;
             });
 
+            if (batchOld.length > 0) {
+                pushUndo({ type: 'batch', changes: batchOld });
+            }
+
             notifyUpdate();
             performSearch();
             showToast('已替换 ' + count + ' 处');
+        }
+
+        function applyCellChange(rowIdx, colIdx, value) {
+            csvData[rowIdx][colIdx] = value;
+            const cell = document.querySelector(`td[data-row="${rowIdx}"][data-col="${colIdx}"]`);
+            if (cell) {
+                cell.textContent = value;
+            }
+        }
+
+        function undo() {
+            if (undoStack.length === 0) { return; }
+            const entry = undoStack.pop();
+
+            if (entry.type === 'batch') {
+                const redoChanges = [];
+                for (let i = entry.changes.length - 1; i >= 0; i--) {
+                    const c = entry.changes[i];
+                    redoChanges.push({ row: c.row, col: c.col, oldValue: c.newValue, newValue: c.oldValue });
+                    applyCellChange(c.row, c.col, c.oldValue);
+                }
+                redoStack.push({ type: 'batch', changes: redoChanges });
+            } else {
+                applyCellChange(entry.row, entry.col, entry.oldValue);
+                redoStack.push({ row: entry.row, col: entry.col, oldValue: entry.newValue, newValue: entry.oldValue });
+            }
+
+            notifyUpdate();
+        }
+
+        function redo() {
+            if (redoStack.length === 0) { return; }
+            const entry = redoStack.pop();
+
+            if (entry.type === 'batch') {
+                const undoChanges = [];
+                for (let i = entry.changes.length - 1; i >= 0; i--) {
+                    const c = entry.changes[i];
+                    undoChanges.push({ row: c.row, col: c.col, oldValue: c.newValue, newValue: c.oldValue });
+                    applyCellChange(c.row, c.col, c.oldValue);
+                }
+                undoStack.push({ type: 'batch', changes: undoChanges });
+            } else {
+                applyCellChange(entry.row, entry.col, entry.oldValue);
+                undoStack.push({ row: entry.row, col: entry.col, oldValue: entry.newValue, newValue: entry.oldValue });
+            }
+
+            notifyUpdate();
         }
 
         document.getElementById('toggleReplace').addEventListener('click', toggleReplace);
@@ -984,6 +1052,18 @@
         document.getElementById('replaceAll').addEventListener('click', replaceAllMatches);
 
         document.addEventListener('keydown', e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+                e.preventDefault();
+                undo();
+                return;
+            }
+
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+                e.preventDefault();
+                redo();
+                return;
+            }
+
             if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
                 e.preventDefault();
                 openSearch();
