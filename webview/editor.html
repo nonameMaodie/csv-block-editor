@@ -790,10 +790,53 @@
             }
         }
 
+        function handleFileChanged(newContent) {
+            const currentContent = convertToCSV(csvData);
+            if (newContent === currentContent) {
+                return;
+            }
+
+            const scrollContainer = document.querySelector('.table-wrapper');
+            const scrollTop = scrollContainer.scrollTop;
+            const scrollLeft = scrollContainer.scrollLeft;
+
+            let focusInfo = null;
+            const activeCell = document.activeElement;
+            if (activeCell && activeCell.classList.contains('edit-cell')) {
+                focusInfo = {
+                    row: parseInt(activeCell.dataset.row),
+                    col: parseInt(activeCell.dataset.col)
+                };
+            }
+
+            try {
+                csvData = parseCSV(newContent);
+                if (csvData.length === 0) { return; }
+                headers = [...csvData[0]];
+                renderTable();
+
+                scrollContainer.scrollTop = scrollTop;
+                scrollContainer.scrollLeft = scrollLeft;
+
+                if (focusInfo) {
+                    const cell = document.querySelector(
+                        `td[data-row="${focusInfo.row}"][data-col="${focusInfo.col}"]`
+                    );
+                    if (cell) { cell.focus(); }
+                }
+
+                showToast('文件已从外部更新');
+            } catch (error) {
+                showToast('同步外部变更出错: ' + error.message, false);
+            }
+        }
+
         window.addEventListener('message', event => {
             const msg = event.data;
             if (msg.type === 'init') {
                 initializeTable(msg.content, msg.fileName);
+            } else if (msg.type === 'fileChanged') {
+                handleFileChanged(msg.content);
             } else if (msg.type === 'saveResult') {
                 if (msg.success) {
                     showToast('已保存');

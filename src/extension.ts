@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 const activePanels = new Map<string, vscode.WebviewPanel>();
+const lastWrittenContent = new Map<string, string>();
 
 export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
@@ -131,7 +132,35 @@ function openTableView(context: vscode.ExtensionContext, document: vscode.TextDo
         }
     });
 
+    let fileChangeTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const watcher = vscode.workspace.createFileSystemWatcher(filePath);
+
+    watcher.onDidChange(async () => {
+        if (fileChangeTimer) { clearTimeout(fileChangeTimer); }
+        fileChangeTimer = setTimeout(async () => {
+            fileChangeTimer = undefined;
+            try {
+                const freshDoc = await vscode.workspace.openTextDocument(fileUri);
+                const newContent = freshDoc.getText();
+
+                const lastContent = lastWrittenContent.get(filePath);
+                if (lastContent !== undefined && newContent === lastContent) {
+                    return;
+                }
+
+                panel.webview.postMessage({
+                    type: 'fileChanged',
+                    content: newContent
+                });
+            } catch { }
+        }, 200);
+    });
+
     panel.onDidDispose(async () => {
+        watcher.dispose();
+        if (fileChangeTimer) { clearTimeout(fileChangeTimer); }
+        lastWrittenContent.delete(filePath);
         activePanels.delete(key);
         if (activePanels.size === 0) {
             setTableViewContext(false);
@@ -147,6 +176,7 @@ function openTableView(context: vscode.ExtensionContext, document: vscode.TextDo
 }
 
 async function writeToFile(filePath: string, newContent: string) {
+    lastWrittenContent.set(filePath, newContent);
     await fs.promises.writeFile(filePath, newContent, 'utf-8');
 }
 
